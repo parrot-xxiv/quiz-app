@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz App</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Link to Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    <!-- Link to your main stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Set a theme color for mobile devices -->
+    <meta name="theme-color" content="#000000">
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div id="quiz-container" class="max-w-md w-full mx-auto bg-white rounded-lg shadow-md overflow-hidden">
+        <!-- Loading State -->
+        <div id="loading-screen" class="p-6 text-center">
+            <p>Loading quiz questions...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error-screen" class="p-6 text-center hidden">
+            <p class="text-red-500 mb-4" id="error-message">Failed to load quiz. Please try again later.</p>
+            <button id="try-again-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded">
+                Try Again
+            </button>
+        </div>
+
+        <!-- Quiz Content -->
+        <div id="quiz-content" class="hidden">
+            <div class="p-6 border-b">
+                <div class="flex justify-between items-center mb-2">
+                    <p class="text-sm text-gray-500" id="question-counter">Question 1 of 3</p>
+                    <p class="text-sm font-medium" id="score-counter">Score: 0/0</p>
+                </div>
+                <h2 class="text-xl font-bold" id="question-text">Question text goes here</h2>
+            </div>
+
+            <div class="p-6" id="options-container">
+                <!-- Options will be inserted here via JavaScript -->
+            </div>
+
+            <div class="p-6 border-t">
+                <button id="submit-btn"
+                    class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded">
+                    Submit Answer
+                </button>
+                <button id="next-btn"
+                    class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded hidden">
+                    Next Question
+                </button>
+            </div>
+        </div>
+
+        <!-- Completion Screen -->
+        <div id="completion-screen" class="hidden">
+            <div class="p-6 border-b">
+                <h2 class="text-xl font-bold text-center">Quiz Completed!</h2>
+            </div>
+            <div class="p-6 text-center">
+                <p class="text-2xl font-bold mb-4" id="final-score">Your Score: 0/0</p>
+                <p class="text-gray-600 mb-6" id="completion-message">You answered 0 out of 0 questions correctly.</p>
+                <button id="restart-btn"
+                    class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded">
+                    Restart Quiz
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            // Configuration
+            const QUIZ_URL = "https://gist.githubusercontent.com/parrot-xxiv/73b70cb6acd955a67e181fd342e8f057/raw/4482eed7e73c7237dd44bd3b096bbe0df83e9a7d/quiz.csv"; // Replace with your actual CSV URL
+            const QUIZ_COUNT = 10; // Number of questions to include in the quiz
+
+            // State variables
+            let quizData = [];
+            let currentQuestion = 0;
+            let selectedOption = 0;
+            let score = 0;
+            let showResult = false;
+
+            // Shuffle array function
+            function shuffleArray(array) {
+                const newArray = [...array];
+                for (let i = newArray.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+                }
+                return newArray;
+            }
+
+            // Function to parse CSV
+            function parseCSV(csv) {
+                const lines = csv.trim().split('\n');
+                const headers = lines[0].split(',').map(header => header.replace(/"/g, ''));
+
+                return lines.slice(1).map(line => {
+                    const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g)
+                        .map(value => value.replace(/"/g, ''));
+
+                    const question = values[0];
+                    const options = values.slice(1, 5);
+                    // First option is always correct
+                    const correctOption = 0;
+
+                    // Create shuffled options with their original indices
+                    const optionsWithIndices = options.map((opt, idx) => ({ text: opt, originalIndex: idx }));
+                    const shuffledOptions = shuffleArray(optionsWithIndices);
+
+                    // Find where the correct answer ended up after shuffling
+                    const correctAnswer = shuffledOptions.findIndex(opt => opt.originalIndex === correctOption);
+
+                    return {
+                        question,
+                        options: shuffledOptions.map(opt => opt.text),
+                        correctAnswer
+                    };
+                });
+            }
+
+            // Function to fetch quiz data
+            function fetchQuizData() {
+                $.ajax({
+                    url: QUIZ_URL,
+                    success: function (data) {
+                        try {
+                            const parsedData = parseCSV(data);
+                            const selectedQuestions = shuffleArray(parsedData).slice(0, QUIZ_COUNT);
+                            quizData = selectedQuestions;
+
+                            // Hide loading screen and show quiz
+                            $("#loading-screen").addClass("hidden");
+                            $("#quiz-content").removeClass("hidden");
+
+                            // Display first question
+                            displayQuestion();
+                        } catch (err) {
+                            console.error("Error parsing quiz data:", err);
+                            showError("There was a problem loading the quiz. Please try again.");
+                        }
+                    },
+                    error: function () {
+                        console.error("Failed to fetch quiz data");
+                        showError("Failed to load quiz. Please try again later.");
+
+                        // Use fallback data
+                        useFallbackData();
+                    }
+                });
+            }
+
+            // Fallback data in case fetch fails
+            function useFallbackData() {
+                const fallbackData = [
+                    {
+                        question: "If all mammals are warm-blooded and all dogs are mammals, which of the following is true?",
+                        options: shuffleArray(["All dogs are warm-blooded", "Some dogs are warm-blooded", "No dogs are warm-blooded", "Some mammals are not warm-blooded"]),
+                        correctAnswer: 0 // Will be updated below
+                    },
+                    {
+                        question: "All birds can fly. Penguins are birds. What can be concluded?",
+                        options: shuffleArray(["Penguins can fly", "Penguins cannot fly", "All birds are penguins", "Some birds cannot fly"]),
+                        correctAnswer: 0
+                    },
+                    {
+                        question: "All squares are rectangles. All rectangles have four sides. What can be concluded?",
+                        options: shuffleArray(["All squares have four sides", "All squares are not rectangles", "Some rectangles are squares", "Some squares have more than four sides"]),
+                        correctAnswer: 0
+                    }
+                ];
+
+                // Update correctAnswer after shuffling
+                quizData = fallbackData.map(item => {
+                    const correctText = item.options[0];
+                    const correctIndex = item.options.indexOf(correctText);
+                    return { ...item, correctAnswer: correctIndex };
+                }).slice(0, QUIZ_COUNT);
+
+                // Hide loading screen and show quiz
+                $("#loading-screen").addClass("hidden");
+                $("#quiz-content").removeClass("hidden");
+
+                // Display first question
+                displayQuestion();
+            }
+
+            // Function to show error message
+            function showError(message) {
+                $("#loading-screen").addClass("hidden");
+                $("#error-screen").removeClass("hidden");
+                $("#error-message").text(message);
+            }
+
+            // Function to display current question
+            function displayQuestion() {
+                const question = quizData[currentQuestion];
+
+                // Update question counter and score
+                $("#question-counter").text(`Question ${currentQuestion + 1} of ${quizData.length}`);
+                $("#score-counter").text(`Score: ${score}/${currentQuestion + (showResult ? 1 : 0)}`);
+
+                // Set question text
+                $("#question-text").text(question.question);
+
+                // Clear options container
+                $("#options-container").empty();
+
+                // Add options
+                question.options.forEach((option, index) => {
+                    const optionClass = showResult
+                        ? (index === question.correctAnswer
+                            ? "border-green-500 bg-green-50"
+                            : (selectedOption === index
+                                ? "border-red-500 bg-red-50"
+                                : ""))
+                        : "hover:bg-gray-100";
+
+                    const optionHtml = `
+                        <div class="flex items-center space-x-3 rounded-md border p-4 mb-3 ${optionClass}" data-index="${index}">
+                            <input type="radio" id="option-${index}" name="quiz-option" value="${index}" class="quiz-option" ${selectedOption === index ? "checked" : ""} ${showResult ? "disabled" : ""}>
+                            <label for="option-${index}" class="flex-grow cursor-pointer text-base">${option}</label>
+                            ${showResult && index === question.correctAnswer ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9 12l2 2 4-4"></path></svg>' : ''}
+                            ${showResult && selectedOption === index && index !== question.correctAnswer ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>' : ''}
+                        </div>
+                    `;
+
+                    $("#options-container").append(optionHtml);
+                });
+
+                // Show appropriate button
+                if (showResult) {
+                    $("#submit-btn").addClass("hidden");
+                    $("#next-btn").removeClass("hidden");
+
+                    if (currentQuestion < quizData.length - 1) {
+                        $("#next-btn").text("Next Question");
+                    } else {
+                        $("#next-btn").text("See Results");
+                    }
+                } else {
+                    $("#submit-btn").removeClass("hidden");
+                    $("#next-btn").addClass("hidden");
+                }
+            }
+
+            // Handle option selection
+            $(document).on("change", ".quiz-option", function () {
+                selectedOption = parseInt($(this).val());
+            });
+
+            // Handle option click (for better UX - allows clicking the whole div)
+            $(document).on("click", "#options-container > div", function () {
+                if (!showResult) {
+                    const index = $(this).data("index");
+                    selectedOption = index;
+                    $(".quiz-option").prop("checked", false);
+                    $(`#option-${index}`).prop("checked", true);
+                }
+            });
+
+            // Submit button click handler
+            $("#submit-btn").on("click", function () {
+                if (selectedOption === quizData[currentQuestion].correctAnswer) {
+                    score++;
+                }
+
+                showResult = true;
+                displayQuestion();
+            });
+
+            // Next button click handler
+            $("#next-btn").on("click", function () {
+                showResult = false;
+                selectedOption = 0;
+
+                if (currentQuestion < quizData.length - 1) {
+                    currentQuestion++;
+                    displayQuestion();
+                } else {
+                    // Show completion screen
+                    $("#quiz-content").addClass("hidden");
+                    $("#completion-screen").removeClass("hidden");
+                    $("#final-score").text(`Your Score: ${score}/${quizData.length}`);
+                    $("#completion-message").text(`You answered ${score} out of ${quizData.length} questions correctly.`);
+                }
+            });
+
+            // Try again button click handler
+            $("#try-again-btn").on("click", function () {
+                $("#error-screen").addClass("hidden");
+                $("#loading-screen").removeClass("hidden");
+                fetchQuizData();
+            });
+
+            // Restart button click handler
+            $("#restart-btn").on("click", function () {
+                // Reset state
+                currentQuestion = 0;
+                selectedOption = 0;
+                score = 0;
+                showResult = false;
+
+                // Show loading screen
+                $("#completion-screen").addClass("hidden");
+                $("#loading-screen").removeClass("hidden");
+
+                // Fetch fresh data
+                fetchQuizData();
+            });
+
+            // Start app by fetching quiz data
+            fetchQuizData();
+        });
+    </script>
+    <!-- Register Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then((registration) => {
+            console.log('Service Worker registered with scope:', registration.scope);
+          })
+          .catch((error) => {
+            console.log('Service Worker registration failed:', error);
+          });
+      }
+    </script>
+</body>
+
+</html>
