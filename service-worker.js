@@ -1,10 +1,10 @@
 
 const CACHE_NAME = 'quiz-app-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/images/icon-192x192.png',
-  '/images/icon-512x512.png'
+  'https://eldrenpar.com/quiz-app/',
+  'https://eldrenpar.com/quiz-app/index.html',
+  'https://eldrenpar.com/quiz-app/images/icon-192x192.png',
+  'https://eldrenpar.com/quiz-app/images/icon-512x512.png'
 ];
 
 // Install the service worker and cache the essential files
